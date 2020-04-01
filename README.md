@@ -204,6 +204,7 @@ Hey! We're glad you're thinking about contributing to MeiliSearch! If you think 
 
 Once a day, events are being sent to our Amplitude instance so we can know how many people are using MeiliSearch.<br/>
 Only information about the platform on which the server runs is stored. No other information is being sent.<br/>
+We also use Sentry to report us crashs or errors. To get more information about what iformation Sentry collect, please visit the [Sentry privacy policy](https://sentry.io/privacy/).
 If this doesn't suit you, you can disable these analytics by using the `MEILI_NO_ANALYTICS` env variable.
 
 ## Contact
