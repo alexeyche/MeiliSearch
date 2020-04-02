@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 
+use log::warn;
 use meilisearch_core::Index;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -53,45 +54,80 @@ pub async fn search_with_url_query(ctx: Request<Data>) -> SResult<Response> {
         search_builder.limit(limit);
     }
 
+    let available_attributes: Vec<String> = schema
+        .displayed_name()
+        .iter()
+        .map(|attr| attr.to_string())
+        .collect();
+    let mut restricted_attributes = available_attributes.clone();
+
     if let Some(attributes_to_retrieve) = query.attributes_to_retrieve {
-        for attr in attributes_to_retrieve.split(',') {
-            search_builder.add_retrievable_field(attr.to_string());
+        restricted_attributes = attributes_to_retrieve
+            .split(',')
+            .map(|attr| attr.to_string())
+            .collect();
+        for attr in restricted_attributes.clone() {
+            if available_attributes.contains(&attr.to_string()) {
+                search_builder.add_retrievable_field(attr);
+            } else {
+                warn!(
+                    "The attributes {:?} present in attributesToCrop parameter doesn't exist",
+                    attr
+                );
+            }
         }
     }
 
-    if let Some(attributes_to_crop) = query.attributes_to_crop {
-        let crop_length = query.crop_length.unwrap_or(200);
-        if attributes_to_crop == "*" {
-            let attributes_to_crop = schema
-                .displayed_name()
-                .iter()
-                .map(|attr| (attr.to_string(), crop_length))
-                .collect();
-            search_builder.attributes_to_crop(attributes_to_crop);
-        } else {
-            let attributes_to_crop = attributes_to_crop
-                .split(',')
-                .map(|r| (r.to_string(), crop_length))
-                .collect();
-            search_builder.attributes_to_crop(attributes_to_crop);
+    if let Some(inline_attributes) = query.attributes_to_crop {
+        let default_crop_length: usize = query.crop_length.unwrap_or(200);
+        let mut final_attributes: HashMap<String, usize> = HashMap::new();
+
+        for attribute in inline_attributes.split(',').collect::<Vec<&str>>().iter() {
+            let mut attribute = attribute.split(':').into_iter();
+            let attr = attribute.next();
+            let length = attribute
+                .next()
+                .map(|s| s.parse().ok())
+                .flatten()
+                .unwrap_or(default_crop_length);
+            match attr {
+                Some("*") => {
+                    for attr in &restricted_attributes {
+                        final_attributes.insert(attr.to_string(), length);
+                    }
+                }
+                Some(attr) => {
+                    if available_attributes.contains(&attr.to_string()) {
+                        final_attributes.insert(attr.to_string(), length);
+                    } else {
+                        warn!("The attributes {:?} present in attributesToCrop parameter doesn't exist", attr);
+                    }
+                }
+                None => {}
+            }
         }
+
+        search_builder.attributes_to_crop(final_attributes);
     }
 
-    if let Some(attributes_to_highlight) = query.attributes_to_highlight {
-        let attributes_to_highlight = if attributes_to_highlight == "*" {
-            schema
-                .displayed_name()
-                .iter()
-                .map(|s| s.to_string())
-                .collect()
-        } else {
-            attributes_to_highlight
-                .split(',')
-                .map(|s| s.to_string())
-                .collect()
-        };
+    if let Some(inline_attributes) = query.attributes_to_highlight {
+        let mut final_attributes: HashSet<String> = HashSet::new();
 
-        search_builder.attributes_to_highlight(attributes_to_highlight);
+        for attribute in inline_attributes.split(',') {
+            if attribute == "*" {
+                for attr in &restricted_attributes {
+                    final_attributes.insert(attr.to_string());
+                }
+            } else {
+                if available_attributes.contains(&attribute.to_string()) {
+                    final_attributes.insert(attribute.to_string());
+                } else {
+                    warn!("The attributes {:?} present in attributesToHighlight parameter doesn't exist", attribute);
+                }
+            }
+        }
+
+        search_builder.attributes_to_highlight(final_attributes);
     }
 
     if let Some(filters) = query.filters {
