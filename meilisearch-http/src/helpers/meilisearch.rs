@@ -27,6 +27,7 @@ pub enum Error {
     AttributeNotFoundOnSchema(String),
     MissingFilterValue,
     UnknownFilteredAttribute,
+    UnknownRankingRule(String),
     Internal(String),
 }
 
@@ -55,6 +56,7 @@ impl fmt::Display for Error {
             UnknownFilteredAttribute => {
                 f.write_str("a filter is specifying an unknown schema attribute")
             }
+            UnknownRankingRule(err) => write!(f, "unknown ranking rule; {}", err),
             Internal(err) => write!(f, "internal error; {}", err),
         }
     }
@@ -89,6 +91,7 @@ impl IndexSearchExt for Index {
             filters: None,
             timeout: Duration::from_millis(30),
             matches: false,
+            ranking_rules: None,
         }
     }
 }
@@ -104,6 +107,7 @@ pub struct SearchBuilder<'a> {
     filters: Option<String>,
     timeout: Duration,
     matches: bool,
+    ranking_rules: Option<Vec<String>>
 }
 
 impl<'a> SearchBuilder<'a> {
@@ -150,6 +154,11 @@ impl<'a> SearchBuilder<'a> {
 
     pub fn get_matches(&mut self) -> &SearchBuilder {
         self.matches = true;
+        self
+    }
+
+    pub fn ranking_rules(&mut self, value: Vec<String>) -> &SearchBuilder {
+        self.ranking_rules = Some(value);
         self
     }
 
@@ -298,7 +307,15 @@ impl<'a> SearchBuilder<'a> {
         ranked_map: &'a RankedMap,
         schema: &Schema,
     ) -> Result<Option<Criteria<'a>>, Error> {
-        let ranking_rules = self.index.main.ranking_rules(reader)?;
+
+        let ranking_rules = match &self.ranking_rules {
+            Some(ranking_rules_str) => {
+                RankingRule::from_iter(ranking_rules_str)
+                    .map_err(|err| Error::UnknownRankingRule(err.to_string()))
+                    .map(Some)?
+            }
+            None => self.index.main.ranking_rules(reader)?,
+        };
 
         if let Some(ranking_rules) = ranking_rules {
             let mut builder = CriteriaBuilder::with_capacity(7 + ranking_rules.len());
@@ -373,7 +390,7 @@ pub struct SearchResult {
     pub query: String,
 }
 
-/// returns the start index and the length on the crop. 
+/// returns the start index and the length on the crop.
 fn aligned_crop(text: &str, match_index: usize, context: usize) -> (usize, usize) {
     let is_word_component = |c: &char| c.is_alphanumeric() && !is_cjk(*c);
 
@@ -557,8 +574,8 @@ mod tests {
         let (start, length) = aligned_crop(&text, 5, 3);
         let cropped =  text.chars().skip(start).take(length).collect::<String>().trim().to_string();
         assert_eq!("isのス", cropped);
-        
-        // split regular word / CJK word, no space 
+
+        // split regular word / CJK word, no space
         let (start, length) = aligned_crop(&text, 7, 1);
         let cropped =  text.chars().skip(start).take(length).collect::<String>().trim().to_string();
         assert_eq!("のス", cropped);

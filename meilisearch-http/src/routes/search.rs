@@ -26,6 +26,7 @@ struct SearchQuery {
     filters: Option<String>,
     timeout_ms: Option<u64>,
     matches: Option<bool>,
+    ranking_rules: Option<String>,
 }
 
 pub async fn search_with_url_query(ctx: Request<Data>) -> SResult<Response> {
@@ -106,6 +107,15 @@ pub async fn search_with_url_query(ctx: Request<Data>) -> SResult<Response> {
         if matches {
             search_builder.get_matches();
         }
+    }
+
+    if let Some(ranking_rules) = query.ranking_rules {
+        search_builder.ranking_rules(
+            ranking_rules
+                .split(',')
+                .map(|s| s.to_string())
+                .collect()
+        );
     }
 
     let response = match search_builder.search(&reader) {

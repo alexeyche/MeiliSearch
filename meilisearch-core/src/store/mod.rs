@@ -207,6 +207,7 @@ pub struct Index {
     pub docs_words: DocsWords,
     pub prefix_documents_cache: PrefixDocumentsCache,
     pub prefix_postings_lists_cache: PrefixPostingsListsCache,
+    // pub ranked_map: RankedMap,
 
     pub updates: Updates,
     pub updates_results: UpdatesResults,
